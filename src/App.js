@@ -1,10 +1,14 @@
-import React, { Component } from 'react';
+import { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { ToastContainer } from 'react-toastify';
+import Loader from 'react-loader-spinner';
+import 'react-loader-spinner/dist/loader/css/react-spinner-loader.css';
 import './app.css';
+import { animateScroll as scroll } from 'react-scroll';
+
 import pixabayApi from './components/pixabay-api';
 import ImagesErrorView from './components/ImagesErrorView';
-import ImagePendingView from './components/ImagePendingView';
+// import ImagePendingView from './components/ImagePendingView';
 import ImageGallery from './components/ImageGallery';
 import Button from './components/Button';
 import Searchbar from './components/Searchbar';
@@ -16,76 +20,78 @@ const Status = {
   REJECTED: 'rejected',
 };
 
-class App extends Component {
-  state = {
-    error: null,
-    status: 'idle',
-    requestKey: '',
-    page: 1,
-    images: [],
-  };
+export default function App() {
+  const [error, setError] = useState(null);
+  const [status, setStatus] = useState(Status.IDLE);
+  const [requestKey, setRequestKey] = useState('');
+  const [page, setPage] = useState(1);
+  const [images, setImages] = useState([]);
 
-  static propTypes = {
-    requestKey: PropTypes.string.isRequired,
-    page: PropTypes.number.isRequired,
-    images: PropTypes.array.isRequired,
-  };
-
-  handleFormSubmit = newRequestKey => {
-    this.setState({ requestKey: newRequestKey, page: 1, images: [] });
-  };
-
-  componentDidUpdate(prevProps, prevState) {
-    const prevName = prevState.requestKey;
-    const nextName = this.state.requestKey;
-
-    if (prevName !== nextName) {
-      this.renderImages();
+  const handleFormSubmit = newRequestKey => {
+    if (newRequestKey === requestKey) {
+      return;
     }
-  }
-
-  renderImages = () => {
-    const { requestKey, page } = this.state;
-
-    pixabayApi
-      .fetchImages(requestKey, page)
-      .then(response =>
-        this.setState(prevState => ({
-          images: [...prevState.images, ...response.hits],
-          page: prevState.page + 1,
-        })),
-      )
-      .catch(error => this.setState({ error, status: Status.REJECTED }))
-      .finally(() => this.setState({ status: Status.RESOLVED }));
+    setRequestKey(newRequestKey);
+    setPage(1);
+    setImages([]);
   };
 
-  render() {
-    const { status, error } = this.state;
+  useEffect(() => {
+    if (!requestKey) {
+      return;
+    }
 
-    return (
-      <>
-        <Searchbar onSubmit={this.handleFormSubmit}></Searchbar>
-        <ToastContainer autoClose={3000} />
+    const renderImages = () => {
+      setStatus(Status.PENDING);
 
-        {status === Status.IDLE && (
-          <p className="welcomeText">Please enter your search term</p>
-        )}
+      pixabayApi
+        .fetchImages(requestKey, page)
+        .then(images => setImages(prevState => [...prevState, ...images]))
+        .catch(error => {
+          setError(error);
+          setStatus(Status.REJECTED);
+        })
+        .finally(() => setStatus(Status.RESOLVED));
+    };
 
-        {status === Status.PENDING && <ImagePendingView />}
+    renderImages();
+    scroll.scrollToBottom();
+  }, [requestKey, page]);
 
-        {status === Status.REJECTED && (
-          <ImagesErrorView message={error.message} />
-        )}
+  const onLoadMore = () => {
+    setPage(prevState => prevState + 1);
+  };
 
-        {status === Status.RESOLVED && (
-          <>
-            <ImageGallery images={this.state.images} />
-            <Button onClick={this.renderImages} />
-          </>
-        )}
-      </>
-    );
-  }
+  return (
+    <>
+      <Searchbar onSubmit={handleFormSubmit}></Searchbar>
+      <ToastContainer autoClose={3000} />
+      {status === Status.IDLE && (
+        <p className="welcomeText">Please enter your search term</p>
+      )}
+      {status === Status.REJECTED && (
+        <ImagesErrorView message={error.message} />
+      )}
+      {images.length > 0 && <ImageGallery images={images} />}
+
+      {status === Status.RESOLVED && <Button onClick={onLoadMore} />}
+
+      {status === Status.PENDING && (
+        <Loader
+          style={{ textAlign: 'center' }}
+          className="Loader"
+          type="ThreeDots"
+          color="#303f9f"
+          height={50}
+          width={50}
+        />
+      )}
+    </>
+  );
 }
 
-export default App;
+App.propTypes = {
+  requestKey: PropTypes.string,
+  page: PropTypes.number,
+  images: PropTypes.array,
+};
